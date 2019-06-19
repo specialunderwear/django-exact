@@ -43,7 +43,7 @@ class ExactException(Exception):
     def __str__(self):
         return "%s, limit reached? %s" % (
             super(ExactException, self).__str__(),
-            self.is_limit_reached,
+            self.limits.is_limit_reached,
         )
 
 

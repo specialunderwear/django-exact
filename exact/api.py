@@ -301,7 +301,7 @@ class Exact(object):
     def raw(self, method, path, data=None, params=None, re_auth=True):
         url = "%s%s" % (self.session.api_url, path)
         return self._perform_request(
-            method, url, path, data=data, params=params, re_auth=re_auth
+            method, url, data=data, params=params, re_auth=re_auth
         )
 
     def get(self, resource, filter_string=None, select=None):

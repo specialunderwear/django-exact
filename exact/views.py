@@ -74,12 +74,13 @@ def webhook(request):
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
     if len(request.body) == 0:
+        logger.info("empty response made wut why")
         return HttpResponse()
     try:
         data = json.loads(request.body)
-        logger.debug(data)
+        logger.info("webhook called: %s", json.dumps(data, indent=4))
         return HttpResponse(request.body)
     except Exception as e:
-        logger.debug("error: " + request.body)
+        logger.exception(e)
+        logger.error("error: %s", request.body)
         return HttpResponseBadRequest(e)
-

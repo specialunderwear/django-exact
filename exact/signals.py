@@ -25,14 +25,14 @@ def delete_webhook(sender, instance, *args, **kwargs):
 def create_or_update_webhook(sender, instance, raw, *args, **kwargs):
     if not raw:
         api = Exact()
-        if instance.pk or instance.guid:
-            logger.debug("updating webhook %s: %s -> %s" % (instance.guid, instance.topic, instance.callback))
+        if instance.guid:
+            logger.info("updating webhook %s: %s -> %s" % (instance.guid, instance.topic, instance.callback))
             api.update("webhooks/WebhookSubscriptions", instance.guid, {
                 "Topic": instance.topic,
                 "CallbackURL": instance.callback
             })
         else:
-            logger.debug("creating webhook: %s -> %s" % (instance.topic, instance.callback))
+            logger.info("creating webhook: %s -> %s" % (instance.topic, instance.callback))
             webhook = api.create("webhooks/WebhookSubscriptions", {
                 "Topic": instance.topic,
                 "CallbackURL": instance.callback

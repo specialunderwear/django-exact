@@ -92,17 +92,18 @@ class Resource(object):
         self._api = api
 
     # i am not using *args, and **kwargs (would be more generic) to make autocomplete/hints in IDE work better
-    def filter(self, filter_string=None, select=None, order_by=None, limit=None):
+    def filter(self, filter_string=None, select=None, order_by=None, limit=None, expand=None):
         return self._api.filter(
             self.resource,
             filter_string=filter_string,
             select=select,
             order_by=order_by,
             limit=limit,
+            expand=expand,
         )
 
-    def get(self, filter_string=None, select=None):
-        return self._api.get(self.resource, filter_string=filter_string, select=select)
+    def get(self, filter_string=None, select=None, expand=None):
+        return self._api.get(self.resource, filter_string=filter_string, select=select, expand=expand)
 
     def create(self, data):
         return self._api.create(self.resource, data)
@@ -116,14 +117,14 @@ class Resource(object):
 
 # example of simplifying some resources
 class GetByCodeMixin(object):
-    def get(self, code=None, filter_string=None, select=None):
+    def get(self, code=None, filter_string=None, select=None, expand=None):
         if code is not None:
             if filter_string:
                 filter_string += " and Code eq '%s'" % code
             else:
                 filter_string = "Code eq '%s'" % code
         return super(GetByCodeMixin, self).get(
-            filter_string=filter_string, select=select
+            filter_string=filter_string, select=select, expand=expand
         )
 
 
@@ -305,12 +306,13 @@ class Exact(object):
             method, url, data=data, params=params, re_auth=re_auth
         )
 
-    def get(self, resource, filter_string=None, select=None):
+    def get(self, resource, filter_string=None, select=None, expand=None):
         params = {
             "$top": 2,
             "$select": select or "*",
             "$filter": filter_string,
             "$inlinecount": "allpages",  # this forces a returned dict (otherwise we might get a list with one entry)
+            "$expand": expand,
         }
         r = self._send("GET", resource, params=params)
 

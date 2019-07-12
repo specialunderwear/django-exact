@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils.http import urlencode
+from django.utils.encoding import force_text
 from requests import Request, Session as ReqSession
 
 from exact.models import Session
@@ -198,7 +199,7 @@ class Exact(object):
     def auth_url(self):
         params = {
             "client_id": self.session.client_id,
-            "redirect_uri": self.session.redirect_uri,
+            "redirect_uri": force_text(self.session.redirect_uri),
             "response_type": "code",
         }
         return self.session.api_url + "/oauth2/auth?" + urlencode(params)

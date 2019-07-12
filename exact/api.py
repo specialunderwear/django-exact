@@ -349,7 +349,8 @@ class Exact(object):
 
         next_url = response["d"].get("__next")
         while next_url:
-            response = self._perform_request("GET", next_url)
+            raw_response = self._perform_request("GET", next_url)
+            response = raw_response.json()
             next_url = response["d"].get("__next")
             results = response["d"]["results"]
             for r in results:

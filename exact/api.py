@@ -279,7 +279,7 @@ class Exact(object):
             response = self.requests_session.send(prepped)
 
         self.limits.update(response)
-
+        response.raise_for_status()
         return response
 
     def _send(self, method, resource, data=None, params=None):

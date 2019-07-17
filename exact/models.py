@@ -19,6 +19,9 @@ class Session(models.Model):
     refresh_token = models.TextField(blank=True, null=True)
     authorization_code = models.TextField(blank=True, null=True)
 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 
 def _default_callback_url():
     return "https://%s%s" % (Site.objects.get_current().domain, reverse("exact:webhook"))

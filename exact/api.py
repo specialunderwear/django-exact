@@ -224,7 +224,7 @@ class Exact(object):
         self.session.access_token = decoded["access_token"]
         self.session.refresh_token = decoded["refresh_token"]
         # TODO: use access_expiry to avoid an unnecessary request if we know we will need to re-auth
-        self.session.access_expiry = int(time.time()) + int(decoded["expires_in"])
+        self.session.access_expiry = int(decoded["expires_in"])
         self.session.save()
         # add new token to default headers
         self.requests_session.headers["Authorization"] = (

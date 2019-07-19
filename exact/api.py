@@ -172,10 +172,11 @@ class Exact(object):
     def __init__(self):
         # we try to reuse the connection
         self.requests_session = requests.Session()
+        access_token, = self.get_session("access_token")
         self.requests_session.headers.update(
             {
                 "Accept": "application/json",
-                "Authorization": "Bearer %s" % self.session.access_token,
+                "Authorization": "Bearer %s" % access_token,
                 "Content-Type": "application/json",
                 "Prefer": "return=representation",
             }
@@ -192,33 +193,38 @@ class Exact(object):
         self.sales = PurchaseEntries(self)
         self.purchases = PurchaseEntries(self)
 
-    @property
-    def session(self):
-        s, _ = Session.objects.get_or_create(**EXACT_SETTINGS)
+    def get_session(self, *property_names):
+        if property_names:
+            qs = Session.objects.values_list(*property_names)
+        else:
+            qs = Session.objects
+            
+        s, _ = qs.get_or_create(**EXACT_SETTINGS)
         return s
 
-    @property
-    def auth_url(self):
+    def get_auth_url(self):
+        client_id, redirect_uri, api_url = self.get_session("client_id", "redirect_uri", "api_url")
         params = {
-            "client_id": self.session.client_id,
-            "redirect_uri": force_text(self.session.redirect_uri),
+            "client_id": client_id,
+            "redirect_uri": force_text(redirect_uri),
             "response_type": "code",
         }
-        return self.session.api_url + "/oauth2/auth?" + urlencode(params)
+        return api_url + "/oauth2/auth?" + urlencode(params)
 
     def _get_or_refresh_token(self, params):
         logger.debug("getting refresh token: params=%s", params)
-        response = requests.post(self.session.api_url + "/oauth2/token", data=params, headers={
+        api_url, = self.get_session("api_url")
+        response = requests.post(api_url + "/oauth2/token", data=params, headers={
             "Content-Type": "application/x-www-form-urlencoded",
         })
 
         if response.status_code != 200:
             logger.error(
-                "Refresh token failed reason: %s, url: %s, headers: %s, data: %s",
+                "Refresh token failed reason: %s, url: %s, headers: %s, body: %s",
                 response.reason,
                 response.url,
                 response.request.headers,
-                response.request.data
+                response.request.body
             )
             msg = (
                 "unexpected response while getting/refreshing token: %s" % response.text
@@ -228,7 +234,7 @@ class Exact(object):
         decoded = response.json()
 
         # update exactonline session
-        session = self.session
+        session = self.get_session()
         session.access_token = decoded["access_token"]
         session.refresh_token = decoded["refresh_token"]
         # TODO: use access_expiry to avoid an unnecessary request if we know we will need to re-auth
@@ -249,29 +255,32 @@ class Exact(object):
 
     def get_token(self):
         logger.debug("getting token")
+        client_id, client_secret, authorization_code, redirect_uri = self.get_session("client_id", "client_secret", "authorization_code", "redirect_uri")
         params = {
-            "client_id": self.session.client_id,
-            "client_secret": self.session.client_secret,
-            "code": self.session.authorization_code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": authorization_code,
             "grant_type": "authorization_code",
-            "redirect_uri": self.session.redirect_uri,
+            "redirect_uri": redirect_uri,
         }
         self._get_or_refresh_token(params)
 
     def refresh_token(self):
         logger.debug("refreshing token")
+        client_id, client_secret, refresh_token = self.get_session("client_id", "client_secret", "refresh_token")
         params = {
-            "client_id": self.session.client_id,
-            "client_secret": self.session.client_secret,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "grant_type": "refresh_token",
-            "refresh_token": self.session.refresh_token,
+            "refresh_token": refresh_token,
         }
         self._get_or_refresh_token(params)
 
     def _perform_request(self, method, url, data=None, params=None, re_auth=True):
         # retrive authorization on every request in case multiple processes are
         # using exactonline.
-        headers = {"Authorization": "Bearer %s" % self.session.access_token}
+        access_token, = self.get_session("access_token")
+        headers = {"Authorization": "Bearer %s" % access_token}
         request = requests.Request(method, url, data=data, params=params, headers=headers)
         prepped = self.requests_session.prepare_request(request)
 
@@ -284,7 +293,8 @@ class Exact(object):
         if re_auth and response.status_code == 401:
             self.refresh_token()
             # use new auth-header
-            request.headers = {"Authorization": "Bearer %s" % self.session.access_token}
+            access_token, = self.get_session("access_token")
+            request.headers = {"Authorization": "Bearer %s" % access_token}
             prepped = self.requests_session.prepare_request(request)
             logger.debug("sending request: %s", prepped.url)
             response = self.requests_session.send(prepped)
@@ -294,7 +304,8 @@ class Exact(object):
         return response
 
     def _send(self, method, resource, data=None, params=None):
-        url = "%s/v1/%s/%s" % (self.session.api_url, self.session.division, resource)
+        api_url, division = self.get_session("api_url", "division")
+        url = "%s/v1/%s/%s" % (api_url, division, resource)
         response = self._perform_request(method, url, data=data, params=params)
         # at this point we tried to re-auth, so anything but 200/OK, 201/Created or 204/no content is unexpected
         # yes: the exact documentation does not mention 204; returned on PUT anyways
@@ -311,7 +322,8 @@ class Exact(object):
         return response.json()
 
     def raw(self, method, path, data=None, params=None, re_auth=True):
-        url = "%s%s" % (self.session.api_url, path)
+        api_url, = self.get_session("api_url")
+        url = "%s%s" % (api_url, path)
         return self._perform_request(
             method, url, data=data, params=params, re_auth=re_auth
         )

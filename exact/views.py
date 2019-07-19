@@ -24,14 +24,15 @@ class Authenticate(RedirectView):
 
     def get_redirect_url(self, *args, **kwargs):
         api = Exact()
+        session = api.get_session()
         if self.request.GET.get("code"):
-            api.session.authorization_code = self.request.GET.get("code")
-            api.session.save()
+            session.authorization_code = self.request.GET.get("code")
+            session.save()
 
-        if not api.session.authorization_code:
-            return api.auth_url
+        if not session.authorization_code:
+            return api.get_auth_url()
 
-        if not api.session.access_token:
+        if not session.access_token:
             api.get_token()
 
         return super(Authenticate, self).get_redirect_url(*args, **kwargs)
@@ -44,7 +45,8 @@ class Status(TemplateView):
 
     def dispatch(self, request, *args, **kwargs):
         api = Exact()
-        if not api.session.authorization_code or not api.session.access_token:
+        authorization_code, access_token = api.get_session("authorization_code", "access_token")
+        if not authorization_code or not access_token:
             return HttpResponseRedirect(reverse("exact:authenticate"))
         self.api = api
         return super(Status, self).dispatch(request, *args, **kwargs)
@@ -58,9 +60,10 @@ class Status(TemplateView):
         response = self.api.raw("GET", "/v1/current/Me", params={"$select": "FullName,Email,ThumbnailPicture"})
         ctx["api_user"] = response.json()["d"]["results"][0]
 
+        division, = self.api.get_session("division")
         ctx["division"] = self.api.get(
             "hrm/Divisions",
-            filter_string="Code eq %d" % self.api.session.division,
+            filter_string="Code eq %d" % division,
             select="Code,CustomerName,Description,Country"
         )
         ctx["dt"] = datetime.now() - start

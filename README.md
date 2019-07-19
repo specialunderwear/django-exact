@@ -3,7 +3,7 @@ API Wrapper and Django app for Exact Online
 
 * transparently handles re-authentication. Exact's OAuth2 tokens are valid for 10 minutes
 * handles pagination. `filter()` returns a generator
-* uses connection keep-alive (thanks to the requests library) resulting in huge performance gain. Exact can take over 5 seconds to establish a HTTPS/TLS connection, subsequent requests are faster)
+* doe not use connection keep-alive because exact does not let you have enough concurrent connections to be useful.
 
 Setup
 -----

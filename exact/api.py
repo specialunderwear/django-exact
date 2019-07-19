@@ -175,17 +175,6 @@ class Exact(object):
 
     def __init__(self):
         # we try to reuse the connection
-        self.requests_session = requests.Session()
-        access_token, = self.get_session("access_token")
-        self.requests_session.headers.update(
-            {
-                "Accept": "application/json",
-                "Authorization": "Bearer %s" % access_token,
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-            }
-        )
-
         # we keep track of the request limits exactonline poses
         self.limits = Limits()
 
@@ -249,18 +238,6 @@ class Exact(object):
         session.access_expiry = int(decoded["expires_in"])
         session.save()
 
-        # renew connection and update headers
-        requests_session = requests.Session()
-        requests_session.headers.update(
-            {
-                "Accept": "application/json",
-                "Authorization": "Bearer %s" % session.access_token,
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-            }
-        )
-        self.requests_session = requests_session
-
     def get_token(self):
         logger.debug("getting token")
         client_id, client_secret, authorization_code, redirect_uri = self.get_session(
@@ -292,29 +269,32 @@ class Exact(object):
         # retrive authorization on every request in case multiple processes are
         # using exactonline.
         access_token, = self.get_session("access_token")
-        headers = {"Authorization": "Bearer %s" % access_token}
-        request = requests.Request(
+        headers = {
+            "Authorization": "Bearer %s" % access_token,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+        logger.debug(
+            "Performing %s request: %s, params: %s, data: %s, headers: %s",
+            method,
+            url,
+            params,
+            data,
+            headers,
+        )
+        response = requests.request(
             method, url, data=data, params=params, headers=headers
         )
-        prepped = self.requests_session.prepare_request(request)
 
-        logger.debug(
-            "Performing %s request: %s, body: %s, headers: %s",
-            prepped.method,
-            prepped.url,
-            prepped.body,
-            prepped.headers,
-        )
-
-        response = self.requests_session.send(prepped)
         if re_auth and response.status_code == 401:
             self.refresh_token()
             # use new auth-header
             access_token, = self.get_session("access_token")
-            request.headers = {"Authorization": "Bearer %s" % access_token}
-            prepped = self.requests_session.prepare_request(request)
-            logger.debug("sending request: %s", prepped.url)
-            response = self.requests_session.send(prepped)
+            headers.update({"Authorization": "Bearer %s" % access_token})
+            response = requests.request(
+                method, url, data=data, params=params, headers=headers
+            )
 
         self.limits.update(response)
         response.raise_for_status()

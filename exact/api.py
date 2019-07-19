@@ -3,7 +3,6 @@ from __future__ import unicode_literals
 
 import json
 import logging
-import time
 from datetime import datetime
 
 from django.conf import settings
@@ -11,7 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils.http import urlencode
 from django.utils.encoding import force_text
-from requests import Request, Session as ReqSession
+import requests
 
 from exact.models import Session
 
@@ -131,10 +130,10 @@ class GetByCodeMixin(object):
 class Accounts(GetByCodeMixin, Resource):
     resource = "crm/Accounts"
 
-    def get(self, code=None, filter_string=None, select=None):
+    def get(self, code=None, filter_string=None, select=None, expand=None):
         if code is not None:
             code = "%18s" % code
-        return super(Accounts, self).get(code, filter_string, select)
+        return super(Accounts, self).get(code, filter_string, select, expand)
 
 
 class Costcenters(GetByCodeMixin, Resource):
@@ -152,6 +151,7 @@ class GLAccounts(GetByCodeMixin, Resource):
 class PurchaseEntries(Resource):
     resource = "purchaseentry/PurchaseEntries"
 
+    # pylint: disable=arguments-differ
     def get(self, entry_number=None, filter_string=None, select=None):
         if entry_number is not None:
             if filter_string:
@@ -168,16 +168,10 @@ class SalesEntries(PurchaseEntries):
 class Exact(object):
     DoesNotExist = DoesNotExist
     MultipleObjectsReturned = MultipleObjectsReturned
-    # this is only for benchmarking
-    # exact needs ~5.5 seconds to open a https connection
-    # so reusing it speeds things up a lot. (~200ms per call)
-    _REUSE_SESSION = True
 
     def __init__(self):
-        s, created = Session.objects.get_or_create(**EXACT_SETTINGS)
-        self.session = s
-        self.requests_session = ReqSession()
-        # set default headers for this session
+        # we try to reuse the connection
+        self.requests_session = requests.Session()
         self.requests_session.headers.update(
             {
                 "Accept": "application/json",
@@ -187,14 +181,21 @@ class Exact(object):
             }
         )
 
+        # we keep track of the request limits exactonline poses
         self.limits = Limits()
 
+        # there are some predefined apis
         self.accounts = Accounts(self)
         self.costcenters = Costcenters(self)
         self.costunits = Costunits(self)
         self.glaccounts = GLAccounts(self)
         self.sales = PurchaseEntries(self)
         self.purchases = PurchaseEntries(self)
+
+    @property
+    def session(self):
+        s, _ = Session.objects.get_or_create(**EXACT_SETTINGS)
+        return s
 
     @property
     def auth_url(self):
@@ -206,30 +207,45 @@ class Exact(object):
         return self.session.api_url + "/oauth2/auth?" + urlencode(params)
 
     def _get_or_refresh_token(self, params):
-        req = Request("POST", self.session.api_url + "/oauth2/token", data=params)
-        prepped = self.requests_session.prepare_request(req)
-        # exact fails/returns 401 if we send an auth header here
-        del prepped.headers["Authorization"]
-        # this is also the only request which is not "application/json"
-        prepped.headers["Content-Type"] = "application/x-www-form-urlencoded"
+        logger.debug("getting refresh token: params=%s", params)
+        response = requests.post(self.session.api_url + "/oauth2/token", data=params, headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+        })
 
-        logger.debug("sending request: %s" % prepped.url)
-        response = self.requests_session.send(prepped)
         if response.status_code != 200:
+            logger.error(
+                "Refresh token failed reason: %s, url: %s, headers: %s, data: %s",
+                response.reason,
+                response.url,
+                response.request.headers,
+                response.request.data
+            )
             msg = (
                 "unexpected response while getting/refreshing token: %s" % response.text
             )
             raise ExactException(msg, response, self.limits)
+
         decoded = response.json()
-        self.session.access_token = decoded["access_token"]
-        self.session.refresh_token = decoded["refresh_token"]
+
+        # update exactonline session
+        session = self.session
+        session.access_token = decoded["access_token"]
+        session.refresh_token = decoded["refresh_token"]
         # TODO: use access_expiry to avoid an unnecessary request if we know we will need to re-auth
-        self.session.access_expiry = int(decoded["expires_in"])
-        self.session.save()
-        # add new token to default headers
-        self.requests_session.headers["Authorization"] = (
-            "Bearer %s" % self.session.access_token
+        session.access_expiry = int(decoded["expires_in"])
+        session.save()
+
+        # renew connection and update headers
+        requests_session = requests.Session()
+        requests_session.headers.update(
+            {
+                "Accept": "application/json",
+                "Authorization": "Bearer %s" % session.access_token,
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+            }
         )
+        self.requests_session = requests_session
 
     def get_token(self):
         logger.debug("getting token")
@@ -253,29 +269,24 @@ class Exact(object):
         self._get_or_refresh_token(params)
 
     def _perform_request(self, method, url, data=None, params=None, re_auth=True):
-        # to test performance penalty of not using a requests session
-        if not self._REUSE_SESSION:
-            self.requests_session = ReqSession()
-            self.requests_session.headers.update(
-                {
-                    "Accept": "application/json",
-                    "Authorization": "Bearer %s" % self.session.access_token,
-                    "Content-Type": "application/json",
-                    "Prefer": "return=representation",
-                }
-            )
-
-        request = Request(method, url, data=data, params=params)
+        # retrive authorization on every request in case multiple processes are
+        # using exactonline.
+        headers = {"Authorization": "Bearer %s" % self.session.access_token}
+        request = requests.Request(method, url, data=data, params=params, headers=headers)
         prepped = self.requests_session.prepare_request(request)
 
-        logger.debug("Performing %s request: %s" % (method, prepped.url))
+        logger.debug(
+            "Performing %s request: %s, body: %s, headers: %s",
+            prepped.method, prepped.url, prepped.body, prepped.headers
+        )
 
         response = self.requests_session.send(prepped)
         if re_auth and response.status_code == 401:
             self.refresh_token()
-            # prepare again to use new auth-header
+            # use new auth-header
+            request.headers = {"Authorization": "Bearer %s" % self.session.access_token}
             prepped = self.requests_session.prepare_request(request)
-            logger.debug("sending request: %s" % prepped.url)
+            logger.debug("sending request: %s", prepped.url)
             response = self.requests_session.send(prepped)
 
         self.limits.update(response)
@@ -283,7 +294,6 @@ class Exact(object):
         return response
 
     def _send(self, method, resource, data=None, params=None):
-
         url = "%s/v1/%s/%s" % (self.session.api_url, self.session.division, resource)
         response = self._perform_request(method, url, data=data, params=params)
         # at this point we tried to re-auth, so anything but 200/OK, 201/Created or 204/no content is unexpected
@@ -291,7 +301,7 @@ class Exact(object):
         if response.status_code not in (200, 201, 204):
             msg = "Unexpected status code received. Expected one of (200, 201, 204), got %d\n\n%s"
             msg %= (response.status_code, response.text)
-            logger.debug("%s\n%s" % (msg, response.text))
+            logger.debug("%s\n%s", msg, response.text)
             raise ExactException(msg, response, self.limits)
 
         # don't try to decode json if we got nothing back

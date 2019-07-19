@@ -91,7 +91,9 @@ class Resource(object):
         self._api = api
 
     # i am not using *args, and **kwargs (would be more generic) to make autocomplete/hints in IDE work better
-    def filter(self, filter_string=None, select=None, order_by=None, limit=None, expand=None):
+    def filter(
+        self, filter_string=None, select=None, order_by=None, limit=None, expand=None
+    ):
         return self._api.filter(
             self.resource,
             filter_string=filter_string,
@@ -102,7 +104,9 @@ class Resource(object):
         )
 
     def get(self, filter_string=None, select=None, expand=None):
-        return self._api.get(self.resource, filter_string=filter_string, select=select, expand=expand)
+        return self._api.get(
+            self.resource, filter_string=filter_string, select=select, expand=expand
+        )
 
     def create(self, data):
         return self._api.create(self.resource, data)
@@ -198,12 +202,14 @@ class Exact(object):
             qs = Session.objects.values_list(*property_names)
         else:
             qs = Session.objects
-            
+
         s, _ = qs.get_or_create(**EXACT_SETTINGS)
         return s
 
     def get_auth_url(self):
-        client_id, redirect_uri, api_url = self.get_session("client_id", "redirect_uri", "api_url")
+        client_id, redirect_uri, api_url = self.get_session(
+            "client_id", "redirect_uri", "api_url"
+        )
         params = {
             "client_id": client_id,
             "redirect_uri": force_text(redirect_uri),
@@ -214,9 +220,11 @@ class Exact(object):
     def _get_or_refresh_token(self, params):
         logger.debug("getting refresh token: params=%s", params)
         api_url, = self.get_session("api_url")
-        response = requests.post(api_url + "/oauth2/token", data=params, headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-        })
+        response = requests.post(
+            api_url + "/oauth2/token",
+            data=params,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
 
         if response.status_code != 200:
             logger.error(
@@ -224,7 +232,7 @@ class Exact(object):
                 response.reason,
                 response.url,
                 response.request.headers,
-                response.request.body
+                response.request.body,
             )
             msg = (
                 "unexpected response while getting/refreshing token: %s" % response.text
@@ -255,7 +263,9 @@ class Exact(object):
 
     def get_token(self):
         logger.debug("getting token")
-        client_id, client_secret, authorization_code, redirect_uri = self.get_session("client_id", "client_secret", "authorization_code", "redirect_uri")
+        client_id, client_secret, authorization_code, redirect_uri = self.get_session(
+            "client_id", "client_secret", "authorization_code", "redirect_uri"
+        )
         params = {
             "client_id": client_id,
             "client_secret": client_secret,
@@ -267,7 +277,9 @@ class Exact(object):
 
     def refresh_token(self):
         logger.debug("refreshing token")
-        client_id, client_secret, refresh_token = self.get_session("client_id", "client_secret", "refresh_token")
+        client_id, client_secret, refresh_token = self.get_session(
+            "client_id", "client_secret", "refresh_token"
+        )
         params = {
             "client_id": client_id,
             "client_secret": client_secret,
@@ -281,12 +293,17 @@ class Exact(object):
         # using exactonline.
         access_token, = self.get_session("access_token")
         headers = {"Authorization": "Bearer %s" % access_token}
-        request = requests.Request(method, url, data=data, params=params, headers=headers)
+        request = requests.Request(
+            method, url, data=data, params=params, headers=headers
+        )
         prepped = self.requests_session.prepare_request(request)
 
         logger.debug(
             "Performing %s request: %s, body: %s, headers: %s",
-            prepped.method, prepped.url, prepped.body, prepped.headers
+            prepped.method,
+            prepped.url,
+            prepped.body,
+            prepped.headers,
         )
 
         response = self.requests_session.send(prepped)

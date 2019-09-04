@@ -187,13 +187,15 @@ class Exact(object):
         self.purchases = PurchaseEntries(self)
 
     def get_session(self, *property_names):
+        if not Session.objects.filter(**EXACT_SETTINGS).exists():
+            Session.objects.create(**EXACT_SETTINGS)
+
         if property_names:
             qs = Session.objects.values_list(*property_names)
         else:
             qs = Session.objects
 
-        s, _ = qs.get_or_create(**EXACT_SETTINGS)
-        return s
+        return qs.get(**EXACT_SETTINGS)
 
     def get_auth_url(self):
         client_id, redirect_uri, api_url = self.get_session(

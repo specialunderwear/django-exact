@@ -76,9 +76,9 @@ class Limits(object):
             self.daily_limit_reset = datetime.utcfromtimestamp(
                 int(response.headers["X-RateLimit-Reset"]) / 1000
             )
-            self.minutely_limit = int(response.headers["X-RateLimit-Minutely-Limit"])
+            self.minutely_limit = int(response.headers.get("X-RateLimit-Minutely-Limit", 0))
             self.minutely_limit_remaining = int(
-                response.headers["X-RateLimit-Minutely-Remaining"]
+                response.headers.get("X-RateLimit-Minutely-Remaining", 0)
             )
 
 
